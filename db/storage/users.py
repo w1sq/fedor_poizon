@@ -11,6 +11,10 @@ class User:
 
     id: int
     role: str
+    full_name: str = None
+    phone: str = None
+    balance: int = 0
+    inviter_id: int = None
 
 
 class UserStorage:
@@ -24,7 +28,11 @@ class UserStorage:
             f"""
             CREATE TABLE IF NOT EXISTS {self.__table} (
                 id BIGINT PRIMARY KEY,
-                role TEXT
+                role TEXT,
+                full_name TEXT DEFAULT NULL,
+                phone TEXT DEFAULT NULL,
+                balance INT NOT NULL DEFAULT 0,
+                inviter_id BIGINT DEFAULT NULL
             )
         """
         )
@@ -35,7 +43,7 @@ class UserStorage:
         )
         if data is None:
             return None
-        return User(data[0], data[1])
+        return User(data[0], data[1], data[2], data[3], data[4], data[5])
 
     async def promote_to_admin(self, id: int):
         await self._db.execute(
@@ -58,10 +66,14 @@ class UserStorage:
     async def create(self, user: User):
         await self._db.execute(
             f"""
-            INSERT INTO {self.__table} (id, role) VALUES ($1, $2)
+            INSERT INTO {self.__table} (id, full_name, phone, role, balance, inviter_id) VALUES ($1, $2, $3, $4, $5, $6)
         """,
             user.id,
+            user.full_name,
+            user.phone,
             user.role,
+            user.balance,
+            user.inviter_id,
         )
 
     async def get_all_members(self) -> List[User] | None:
@@ -72,7 +84,17 @@ class UserStorage:
         )
         if data is None:
             return None
-        return [User(user_data[0], user_data[1]) for user_data in data]
+        return [
+            User(
+                user_data[0],
+                user_data[1],
+                user_data[2],
+                user_data[3],
+                user_data[4],
+                user_data[5],
+            )
+            for user_data in data
+        ]
 
     async def get_user_amount(self) -> int:
         return await self._db.fetchval(f"SELECT COUNT(*) FROM {self.__table}")

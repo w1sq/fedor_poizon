@@ -54,6 +54,24 @@ class TG_Bot:
             # disable_web_page_preview=True,
         )
 
+    async def _referal_system(self, message: aiogram.types.Message, user: User):
+        withdraw_keyboard = InlineKeyboardMarkup().row(
+            InlineKeyboardButton("Вывести", callback_data=f"withdraw {user.id}")
+        )
+        await message.answer(
+            f"Ваш баланс: <b>{user.balance} ₽</b>\n\nПригласите друга и заработайте 20% от прибыли!\nВаша реферальная ссылка:\n\nhttps://t.me/fedoreventqrbot?start={user.id}",
+            parse_mode="HTML",
+            reply_markup=withdraw_keyboard,
+        )
+
+    async def _withdraw_balance(self, call: aiogram.types.CallbackQuery):
+        user_id = int(call.data.split()[1])
+        user = await self._user_storage.get_by_id(user_id)
+        if user and user.balance > 1000:
+            await call.message.answer("С вами свяжется менеджер.")
+        else:
+            await call.message.answer("Вывод доступен от 1000 ₽ на балансе.")
+
     async def _ask_order_type(self, call: aiogram.types.CallbackQuery):
         await call.message.answer(
             "Выберите тип нужного товара(желательно максимально полное):",
@@ -223,6 +241,11 @@ class TG_Bot:
             self._user_middleware(self._show_menu),
             text="Меню",
         )
+
+        self._dispatcher.register_message_handler(
+            self._user_middleware(self._referal_system),
+            text="💸 Реферальная система",
+        )
         self._dispatcher.register_message_handler(
             self._user_middleware(self._show_menu),
             commands=["start", "menu"],
@@ -240,6 +263,11 @@ class TG_Bot:
         self._dispatcher.register_callback_query_handler(
             self._cancel_handler,
             aiogram.dispatcher.filters.Text(startswith="cancel"),
+            state="*",
+        )
+        self._dispatcher.register_callback_query_handler(
+            self._withdraw_balance,
+            aiogram.dispatcher.filters.Text(startswith="withdraw"),
             state="*",
         )
         self._dispatcher.register_message_handler(
@@ -277,7 +305,23 @@ class TG_Bot:
         async def wrapper(message: aiogram.types.Message, *args, **kwargs):
             user = await self._user_storage.get_by_id(message.chat.id)
             if user is None:
-                user = User(id=message.chat.id, role=User.USER)
+                split_message = message.text.split()
+                if (
+                    len(split_message) == 2
+                    and split_message[1].isdigit()
+                    and await self._user_storage.get_by_id(int(split_message[1]))
+                ):
+                    inviter_id = int(split_message[1])
+                    await self._bot.send_message(
+                        chat_id=inviter_id,
+                        text="❤️ Спасибо за приглашённого друга.",
+                        reply_markup=self._menu_keyboard_user,
+                    )
+                    user = User(
+                        id=message.chat.id, role=User.USER, inviter_id=inviter_id
+                    )
+                else:
+                    user = User(id=message.chat.id, role=User.USER)
                 await self._user_storage.create(user)
                 await message.answer(
                     "Добро пожаловать!", reply_markup=self._menu_keyboard_user
@@ -296,7 +340,7 @@ class TG_Bot:
 
     def _create_keyboards(self):
         self._menu_keyboard_user = ReplyKeyboardMarkup(resize_keyboard=True).row(
-            KeyboardButton("Меню")
+            KeyboardButton("Меню"), KeyboardButton("💸 Реферальная система")
         )
         self._inline_menu_keyboard = (
             InlineKeyboardMarkup()
