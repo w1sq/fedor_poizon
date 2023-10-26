@@ -4,26 +4,15 @@ from dataclasses import dataclass
 
 
 @dataclass
-class User:
-    ADMIN = "admin"
-    USER = "user"
-    BLOCKED = "blocked"
-
+class Order:
     id: int
-    role: str
-    full_name: str = None
-    phone: str = None
-    city: str = None
-    street: str = None
-    house: str = None
-    building: str = None
-    apartament: str = None
-    balance: int = 0
-    inviter_id: int = None
+    buyer_id: int
+    size: str
+    price: int
 
 
-class UserStorage:
-    __table = "users"
+class OrderStorage:
+    __table = "orders"
 
     def __init__(self, db: DB):
         self._db = db
@@ -32,17 +21,9 @@ class UserStorage:
         await self._db.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {self.__table} (
-                id BIGINT PRIMARY KEY,
-                role TEXT,
-                full_name TEXT DEFAULT NULL,
-                phone TEXT DEFAULT NULL,
-                city TEXT DEFAULT NULL,
-                street TEXT DEFAULT NULL,
-                house TEXT DEFAULT NULL,
-                building TEXT DEFAULT NULL,
-                apartament TEXT DEFAULT NULL,
-                balance INT NOT NULL DEFAULT 0,
-                inviter_id BIGINT DEFAULT NULL
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL REFERENCES users(id),
+
             )
         """
         )
@@ -53,19 +34,7 @@ class UserStorage:
         )
         if data is None:
             return None
-        return User(
-            data[0],
-            data[1],
-            data[2],
-            data[3],
-            data[4],
-            data[5],
-            data[6],
-            data[7],
-            data[8],
-            data[9],
-            data[10],
-        )
+        return User(data[0], data[1], data[2], data[3], data[4], data[5])
 
     async def promote_to_admin(self, id: int):
         await self._db.execute(
@@ -88,37 +57,14 @@ class UserStorage:
     async def create(self, user: User):
         await self._db.execute(
             f"""
-            INSERT INTO {self.__table} (id, role, full_name, phone, city, street, house, building, apartament, balance, inviter_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            INSERT INTO {self.__table} (id, full_name, phone, role, balance, inviter_id) VALUES ($1, $2, $3, $4, $5, $6)
         """,
             user.id,
-            user.role,
             user.full_name,
             user.phone,
-            user.city,
-            user.street,
-            user.house,
-            user.building,
-            user.apartament,
-            user.balance,
-            user.inviter_id,
-        )
-
-    async def update(self, user: User):
-        await self._db.execute(
-            f"""
-            UPDATE {self.__table} SET (role, full_name, phone, city, street, house, building, apartament, balance, inviter_id) = ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) WHERE id = $11
-        """,
             user.role,
-            user.full_name,
-            user.phone,
-            user.city,
-            user.street,
-            user.house,
-            user.building,
-            user.apartament,
             user.balance,
             user.inviter_id,
-            user.id,
         )
 
     async def get_all_members(self) -> List[User] | None:
@@ -137,11 +83,6 @@ class UserStorage:
                 user_data[3],
                 user_data[4],
                 user_data[5],
-                user_data[6],
-                user_data[7],
-                user_data[8],
-                user_data[9],
-                user_data[10],
             )
             for user_data in data
         ]

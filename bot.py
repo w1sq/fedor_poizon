@@ -16,17 +16,20 @@ from aiogram.types import (
 from config import Config
 
 
-class GetProductInfo(StatesGroup):
-    product_name = State()
-    size = State()
-    price = State()
+class GetUserInfo(StatesGroup):
     client_name = State()
     phone = State()
     city = State()
     street = State()
     house = State()
     building = State()
-    apartment = State()
+    apartament = State()
+
+
+class GetProductInfo(StatesGroup):
+    link = State()
+    size = State()
+    price = State()
 
 
 class TG_Bot:
@@ -47,12 +50,20 @@ class TG_Bot:
         await self._dispatcher.start_polling()
 
     async def _show_menu(self, message: aiogram.types.Message, user: User):
-        await message.answer(
-            "Меню <a href='https://t.me/freshshshsh'>магазина T & Z Express</a>",
-            parse_mode="HTML",
-            reply_markup=self._inline_menu_keyboard,
-            # disable_web_page_preview=True,
-        )
+        if (await self._user_storage.get_by_id(message.from_user.id)).full_name:
+            await message.answer(
+                "Меню <a href='https://t.me/freshshshsh'>магазина T & Z Express</a>",
+                parse_mode="HTML",
+                reply_markup=self._inline_menu_keyboard,
+                # disable_web_page_preview=True,
+            )
+        else:
+            await message.answer(
+                "Меню <a href='https://t.me/freshshshsh'>магазина T & Z Express</a>\n\nСейчас Вы не зарегестрированы, поэтому Оформление заказа и Корзина Вам не доступны, пройдите регистрацию, нажав кнопку ниже:",
+                parse_mode="HTML",
+                reply_markup=self._inline_reg_keyboard,
+                # disable_web_page_preview=True,
+            )
 
     async def _referal_system(self, message: aiogram.types.Message, user: User):
         withdraw_keyboard = InlineKeyboardMarkup().row(
@@ -78,14 +89,21 @@ class TG_Bot:
             reply_markup=self._order_type_keyboard,
         )
 
+    async def _start_user_registration(self, call: aiogram.types.CallbackQuery):
+        await call.message.answer(
+            "Давайте сначала заполним немного информации о себе(исключительно данные для доставки)\n\n1/7 Введите Ваше полное имя и фамилию:",
+            reply_markup=self._cancel_keyboard,
+        )
+        await GetUserInfo.client_name.set()
+
     async def _ask_product_name(self, call: aiogram.types.CallbackQuery):
         product_type = call.data.split()[1]
-        await GetProductInfo.product_name.set()
+        await GetProductInfo.link.set()
         state = self._dispatcher.get_current().current_state()
         await state.update_data(product_type=product_type)
-        levels = "10"
+        levels = "3"
         if product_type in ("onesize", "tech"):
-            levels = "9"
+            levels = "2"
         await state.update_data(levels=levels)
         async with aiofiles.open("link.jpg", "rb") as link_pic:
             await call.message.answer_photo(
@@ -98,12 +116,12 @@ class TG_Bot:
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
         state_data = await state.get_data()
-        await state.update_data(product_name=message.text.strip())
+        await state.update_data(product_link=message.text.strip())
         if state_data["product_type"] in ("onesize", "tech"):
             async with aiofiles.open("pic.jpg", "rb") as picture:
                 await message.answer_photo(
                     picture,
-                    f"3/{state_data['levels']}  Введите стоимость товара в юанях (зачеркнутая цена):",
+                    f"2/{state_data['levels']}  Введите стоимость товара в юанях (зачеркнутая цена):",
                     reply_markup=self._cancel_keyboard,
                 )
             await GetProductInfo.price.set()
@@ -130,98 +148,105 @@ class TG_Bot:
     async def _process_product_price(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
-        state_data = await state.get_data()
-        await state.update_data(product_price=message.text.strip())
-        await message.answer(
-            f"4/{state_data['levels']} Введите Ваше полное Имя и Фамилию (все данные нужны будут для доставки):",
-            reply_markup=self._cancel_keyboard,
-        )
-        await GetProductInfo.client_name.set()
+        if message.text.strip().isdigit():
+            state_data = await state.get_data()
+            product_price = message.text.strip()
+            product_size = state_data.get("product_size", "")
+            size_info = ""
+            if product_size:
+                size_info = "\n\nРазмер: " + product_size
+            user = await self._user_storage.get_by_id(message.from_user.id)
+            await self._bot.send_message(
+                # 917865313,
+                5546230210,
+                f"""❗️Новая заявка❗️\n\nПользователь <a href="tg://user?id={user.id}">{user.full_name}</a>\nC id: {user.id}\n\nТовар: {state_data["product_link"]}\n\nТип: {state_data["product_type"]}{size_info}\n\nСтоимость: {product_price} юаней\n\nНомер телефона: {user.phone}\n\nАдрес доставки:\n\tГород: {user.city}\n\tУлица: {user.street}\n\tДом: {user.house}\n\tКорпус: {user.building}\n\tКвартира: {user.apartament}""",
+                parse_mode="HTML",
+            )
+            await message.answer(
+                "С вами скоро свяжется наш оператор, ожидайте обратной связи.",
+                reply_markup=self._menu_keyboard_user,
+            )
+        else:
+            await message.answer("Введите только число юаней(цифрами):")
 
     async def _process_client_name(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
-        state_data = await state.get_data()
         await state.update_data(client_name=message.text.strip())
         await message.answer(
-            f"5/{state_data['levels']} Введите Ваш номер телефона:",
+            "2/7 Введите Ваш номер телефона:",
             reply_markup=self._cancel_keyboard,
         )
-        await GetProductInfo.phone.set()
+        await GetUserInfo.phone.set()
 
     async def _process_client_phone(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
-        state_data = await state.get_data()
         await state.update_data(client_phone=message.text.strip())
         await message.answer(
-            f"6/{state_data['levels']} Введите город доставки:",
+            "3/7 Введите город доставки:",
             reply_markup=self._cancel_keyboard,
         )
-        await GetProductInfo.city.set()
+        await GetUserInfo.city.set()
 
     async def _process_client_city(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
-        state_data = await state.get_data()
         await state.update_data(client_city=message.text.strip())
         await message.answer(
-            f"7/{state_data['levels']} Введите название улицы для доставки:",
+            "4/7 Введите название улицы для доставки:",
             reply_markup=self._cancel_keyboard,
         )
-        await GetProductInfo.street.set()
+        await GetUserInfo.street.set()
 
     async def _process_client_street(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
-        state_data = await state.get_data()
         await state.update_data(client_street=message.text.strip())
         await message.answer(
-            f"8/{state_data['levels']} Введите номер дома для доставки:",
+            "5/7 Введите номер дома для доставки:",
             reply_markup=self._cancel_keyboard,
         )
-        await GetProductInfo.house.set()
+        await GetUserInfo.house.set()
 
     async def _process_client_house(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
-        state_data = await state.get_data()
         await state.update_data(client_house=message.text.strip())
         await message.answer(
-            f"9/{state_data['levels']} Введите номер подъезда для доставки, если нет - смело пишите нет:",
+            "6/7 Введите номер подъезда для доставки, если нет - смело пишите нет:",
             reply_markup=self._cancel_keyboard,
         )
-        await GetProductInfo.building.set()
+        await GetUserInfo.building.set()
 
     async def _process_client_building(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
-        state_data = await state.get_data()
         await state.update_data(client_building=message.text.strip())
         await message.answer(
-            f"10/{state_data['levels']} Введите номер квартиры/офиса для доставки:",
+            "7/7 Введите номер квартиры/офиса для доставки:",
             reply_markup=self._cancel_keyboard,
         )
-        await GetProductInfo.apartment.set()
+        await GetUserInfo.apartament.set()
 
     async def _process_client_apartament(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
         state_data = await state.get_data()
-        product_size = state_data.get("product_size", "")
-        size_info = ""
-        if product_size:
-            size_info = "\n\nРазмер: " + product_size
-        await self._bot.send_message(
-            917865313,
-            f"""❗️Новая заявка❗️\n\nПользователь: <a href="tg://user?id={message.from_user.id}">{state_data["client_name"]}</a> с id: {message.from_user.id}\n\nТовар: {state_data["product_name"]}\n\nТип: {state_data["product_type"]}{size_info}\n\nСтоимость: {state_data["product_price"]} юаней\n\nНомер телефона: {state_data["client_phone"]}\n\nАдрес доставки:\n\tГород: {state_data["client_city"]}\n\tУлица: {state_data["client_street"]}\n\tДом: {state_data["client_house"]}\n\tКорпус: {state_data["client_building"]}\n\tКвартира: {message.text}""",
-            parse_mode="HTML",
-        )
-        await message.answer(
-            "С вами скоро свяжется наш оператор, ожидайте обратной связи.",
-            reply_markup=self._menu_keyboard_user,
-        )
+        db_user = await self._user_storage.get_by_id(message.from_user.id)
+        db_user.full_name = state_data["client_name"]
+        db_user.phone = state_data["client_phone"]
+        db_user.city = state_data["client_city"]
+        db_user.street = state_data["client_street"]
+        db_user.house = state_data["client_house"]
+        db_user.building = state_data["client_building"]
+        db_user.apartament = message.text.strip()
         await state.finish()
+        await self._user_storage.update(db_user)
+        await message.answer(
+            "Вы успешно заполнили все необходимые данные, теперь вы можете добавлять товары в корзину и оформлять заказы.",
+            reply_markup=self._inline_menu_keyboard,
+        )
 
     async def _cancel_handler(
         self, call: aiogram.types.CallbackQuery, state: aiogram.dispatcher.FSMContext
@@ -251,6 +276,11 @@ class TG_Bot:
             commands=["start", "menu"],
         )
         self._dispatcher.register_callback_query_handler(
+            self._start_user_registration,
+            aiogram.dispatcher.filters.Text(startswith="registration"),
+            state="*",
+        )
+        self._dispatcher.register_callback_query_handler(
             self._ask_order_type,
             aiogram.dispatcher.filters.Text(startswith="create_order"),
             state="*",
@@ -271,7 +301,7 @@ class TG_Bot:
             state="*",
         )
         self._dispatcher.register_message_handler(
-            self._process_product_name, state=GetProductInfo.product_name
+            self._process_product_name, state=GetProductInfo.link
         )
         self._dispatcher.register_message_handler(
             self._process_product_size, state=GetProductInfo.size
@@ -280,25 +310,25 @@ class TG_Bot:
             self._process_product_price, state=GetProductInfo.price
         )
         self._dispatcher.register_message_handler(
-            self._process_client_name, state=GetProductInfo.client_name
+            self._process_client_name, state=GetUserInfo.client_name
         )
         self._dispatcher.register_message_handler(
-            self._process_client_phone, state=GetProductInfo.phone
+            self._process_client_phone, state=GetUserInfo.phone
         )
         self._dispatcher.register_message_handler(
-            self._process_client_city, state=GetProductInfo.city
+            self._process_client_city, state=GetUserInfo.city
         )
         self._dispatcher.register_message_handler(
-            self._process_client_street, state=GetProductInfo.street
+            self._process_client_street, state=GetUserInfo.street
         )
         self._dispatcher.register_message_handler(
-            self._process_client_house, state=GetProductInfo.house
+            self._process_client_house, state=GetUserInfo.house
         )
         self._dispatcher.register_message_handler(
-            self._process_client_building, state=GetProductInfo.building
+            self._process_client_building, state=GetUserInfo.building
         )
         self._dispatcher.register_message_handler(
-            self._process_client_apartament, state=GetProductInfo.apartment
+            self._process_client_apartament, state=GetUserInfo.apartament
         )
 
     def _user_middleware(self, func: typing.Callable) -> typing.Callable:
@@ -313,19 +343,15 @@ class TG_Bot:
                 ):
                     inviter_id = int(split_message[1])
                     await self._bot.send_message(
-                        chat_id=inviter_id,
-                        text="❤️ Спасибо за приглашённого друга.",
-                        reply_markup=self._menu_keyboard_user,
+                        chat_id=inviter_id, text="❤️ Спасибо за приглашённого друга."
                     )
                     user = User(
                         id=message.chat.id, role=User.USER, inviter_id=inviter_id
                     )
+                    await message.answer("Вы успешно установили своего пригласителя")
                 else:
                     user = User(id=message.chat.id, role=User.USER)
                 await self._user_storage.create(user)
-                await message.answer(
-                    "Добро пожаловать!", reply_markup=self._menu_keyboard_user
-                )
             if user.role != User.BLOCKED:
                 await func(message, user)
 
@@ -351,6 +377,19 @@ class TG_Bot:
                 )
             )
         )
+
+        self._inline_reg_keyboard = (
+            InlineKeyboardMarkup()
+            .row(
+                InlineKeyboardButton("Зарегестрироваться", callback_data="registration")
+            )
+            .row(
+                InlineKeyboardButton(
+                    "Связаться с менеджером", url="https://t.me/clover4th"
+                )
+            )
+        )
+
         self._order_type_keyboard = (
             InlineKeyboardMarkup()
             .row(
