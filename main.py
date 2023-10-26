@@ -1,7 +1,7 @@
 import asyncio
 from db.db import DB
 from bot import TG_Bot
-from db.storage import UserStorage
+from db.storage import UserStorage, OrderStorage
 from config import Config
 import aioschedule as schedule
 
@@ -17,7 +17,9 @@ async def init_db():
     await db.init()
     user_storage = UserStorage(db)
     await user_storage.init()
-    return user_storage
+    order_storage = OrderStorage(db)
+    await order_storage.init()
+    return user_storage, order_storage
 
 
 async def check_schedule():
@@ -27,8 +29,8 @@ async def check_schedule():
 
 
 async def main():
-    user_storage = await init_db()
-    tg_bot = TG_Bot(user_storage)
+    user_storage, order_storage = await init_db()
+    tg_bot = TG_Bot(user_storage, order_storage)
     await tg_bot.init()
     await tg_bot.start()
 

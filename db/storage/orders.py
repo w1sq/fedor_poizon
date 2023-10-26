@@ -5,10 +5,14 @@ from dataclasses import dataclass
 
 @dataclass
 class Order:
-    id: int
     buyer_id: int
-    size: str
+    link: str
     price: int
+    size: str = "one size"
+    id: int = None
+
+    def __str__(self) -> str:
+        return f"{self.link}\nРазмер: {self.size}\nЦена: {self.price} юаней"
 
 
 class OrderStorage:
@@ -22,52 +26,54 @@ class OrderStorage:
             f"""
             CREATE TABLE IF NOT EXISTS {self.__table} (
                 id SERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL REFERENCES users(id),
-
+                buyer_id BIGINT,
+                link TEXT,
+                size TEXT NOT NULL DEFAULT 'one size',
+                price INT,
+                FOREIGN KEY (buyer_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """
         )
 
-    async def get_by_id(self, id: int) -> User | None:
+    async def get_by_id(self, order_id: int) -> Order | None:
         data = await self._db.fetchrow(
-            f"SELECT * FROM {self.__table} WHERE id = $1", id
+            f"SELECT * FROM {self.__table} WHERE id = $1", order_id
         )
         if data is None:
             return None
-        return User(data[0], data[1], data[2], data[3], data[4], data[5])
-
-    async def promote_to_admin(self, id: int):
-        await self._db.execute(
-            f"UPDATE {self.__table} SET role = $1 WHERE id = $2", User.ADMIN, id
+        return Order(
+            id=data[0], buyer_id=data[1], link=data[2], size=data[3], price=data[4]
         )
 
-    async def demote_from_admin(self, id: int):
-        await self._db.execute(
-            f"UPDATE {self.__table} SET role = $1 WHERE id = $2", User.USER, id
+    async def get_orders_by_user_id(self, user_id: int) -> List[Order] | None:
+        data = await self._db.fetch(
+            f"SELECT * FROM {self.__table} WHERE buyer_id = $1", user_id
         )
-
-    async def get_role_list(self, role: str) -> List[int] | None:
-        roles = await self._db.fetch(
-            f"SELECT * FROM {self.__table} WHERE role = $1", role
-        )
-        if roles is None:
+        if data is None:
             return None
-        return [role[0] for role in roles]
+        return [
+            Order(
+                id=order_data[0],
+                buyer_id=order_data[1],
+                link=order_data[2],
+                size=order_data[3],
+                price=order_data[4],
+            )
+            for order_data in data
+        ]
 
-    async def create(self, user: User):
+    async def create(self, order: Order):
         await self._db.execute(
             f"""
-            INSERT INTO {self.__table} (id, full_name, phone, role, balance, inviter_id) VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO {self.__table} (buyer_id, link, size, price) VALUES ($1, $2, $3, $4)
         """,
-            user.id,
-            user.full_name,
-            user.phone,
-            user.role,
-            user.balance,
-            user.inviter_id,
+            order.buyer_id,
+            order.link,
+            order.size,
+            order.price,
         )
 
-    async def get_all_members(self) -> List[User] | None:
+    async def get_all_members(self) -> List[Order] | None:
         data = await self._db.fetch(
             f"""
             SELECT * FROM {self.__table}
@@ -76,34 +82,23 @@ class OrderStorage:
         if data is None:
             return None
         return [
-            User(
-                user_data[0],
-                user_data[1],
-                user_data[2],
-                user_data[3],
-                user_data[4],
-                user_data[5],
+            Order(
+                id=order_data[0],
+                buyer_id=order_data[1],
+                link=order_data[2],
+                size=order_data[3],
+                price=order_data[4],
             )
-            for user_data in data
+            for order_data in data
         ]
 
-    async def get_user_amount(self) -> int:
+    async def get_orders_amount(self) -> int:
         return await self._db.fetchval(f"SELECT COUNT(*) FROM {self.__table}")
 
-    async def ban_user(self, user_id: User):
-        await self._db.execute(
-            f"UPDATE {self.__table} SET role = $1 WHERE id = $2", User.BLOCKED, user_id
-        )
-
-    async def unban_user(self, user_id: User):
-        await self._db.execute(
-            f"UPDATE {self.__table} SET role = $1 WHERE id = $2", User.USER, user_id
-        )
-
-    async def delete(self, user_id: int):
+    async def delete(self, order_id: int):
         await self._db.execute(
             f"""
             DELETE FROM {self.__table} WHERE id = $1
         """,
-            user_id,
+            order_id,
         )
