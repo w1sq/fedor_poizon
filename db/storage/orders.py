@@ -11,8 +11,9 @@ class Order:
     size: str = "one size"
     id: int = None
 
-    def __str__(self) -> str:
-        return f"{self.link}\nРазмер: {self.size}\nЦена: {self.price} юаней"
+    def custom_str(self, yuan_rate: float) -> str:
+        rub_price = round(1.066 * 1.18 * self.price * yuan_rate + 1000)
+        return f"{self.link}\nРазмер: {self.size}\nЦена в юанях: {self.price}\nЦена в рублях: {rub_price}"
 
 
 class OrderStorage:

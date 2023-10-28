@@ -3,6 +3,7 @@ import typing
 import aiogram
 import aiohttp
 import asyncio
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from db.storage import UserStorage, User, OrderStorage, Order
@@ -21,11 +22,7 @@ from config import Config
 class GetUserInfo(StatesGroup):
     client_name = State()
     phone = State()
-    city = State()
-    street = State()
-    house = State()
-    building = State()
-    apartament = State()
+    address = State()
 
 
 class GetProductInfo(StatesGroup):
@@ -47,16 +44,21 @@ class TG_Bot:
         self._dispatcher: aiogram.Dispatcher = aiogram.Dispatcher(
             self._bot, storage=self._storage
         )
+        self._yuan_rate = None
         self._create_keyboards()
 
     async def init(self):
+        await self._get_last_rate()
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(self._get_last_rate, "interval", minutes=1)
+        scheduler.start()
         self._init_handler()
 
     async def start(self):
         print("Bot has started")
         await self._dispatcher.start_polling()
 
-    async def get_last_rate(self) -> float:
+    async def _get_last_rate(self):
         rate = None
         while not rate:
             async with aiohttp.ClientSession() as session:
@@ -69,31 +71,22 @@ class TG_Bot:
                         )
                         rate = 1 / data["rates"]["CNY"]
             await asyncio.sleep(5)
-        return rate
+        self._yuan_rate = rate
 
     async def _show_menu(self, message: aiogram.types.Message):
-        user = await self._user_storage.get_by_id(message.chat.id)
-        if user and user.full_name:
-            await message.answer(
-                "Меню <a href='https://t.me/freshshshsh'>магазина T & Z Express</a>",
-                parse_mode="HTML",
-                reply_markup=self._inline_menu_keyboard,
-                # disable_web_page_preview=True,
-            )
-        else:
-            await message.answer(
-                "Меню <a href='https://t.me/freshshshsh'>магазина T & Z Express</a>\n\nСейчас Вы не зарегестрированы, поэтому Оформление заказа и Корзина Вам не доступны, пройдите регистрацию, нажав кнопку ниже:",
-                parse_mode="HTML",
-                reply_markup=self._inline_reg_keyboard,
-                # disable_web_page_preview=True,
-            )
+        await message.answer(
+            "Меню <a href='https://t.me/freshshshsh'>MAREQU Store</a>",
+            parse_mode="HTML",
+            reply_markup=self._inline_menu_keyboard,
+            # disable_web_page_preview=True,
+        )
 
-    async def _referal_system(self, message: aiogram.types.Message):
-        user = await self._user_storage.get_by_id(message.chat.id)
+    async def _referal_system(self, call: aiogram.types.CallbackQuery):
+        user = await self._user_storage.get_by_id(call.message.chat.id)
         withdraw_keyboard = InlineKeyboardMarkup().row(
             InlineKeyboardButton("Вывести", callback_data=f"withdraw {user.id}")
         )
-        await message.answer(
+        await call.message.answer(
             f"Ваш баланс: <b>{user.balance} ₽</b>\n\nПригласите друга и заработайте 20% от прибыли!\nВаша реферальная ссылка:\n\nhttps://t.me/fedoreventqrbot?start={user.id}",
             parse_mode="HTML",
             reply_markup=withdraw_keyboard,
@@ -112,14 +105,20 @@ class TG_Bot:
             call.message.chat.id
         )
         if user_orders:
-            await call.message.answer("🛒 Ваша корзина:")
+            await call.message.answer(
+                "Проверьте, не забыли ли Вы ничего 🤔\n🛒 Ваша корзина:",
+                reply_markup=self._inline_cart_keyboard,
+            )
             for order in user_orders:
                 delete_keyboard = InlineKeyboardMarkup().row(
                     InlineKeyboardButton(
                         text="❌ Удалить", callback_data=f"delete_order {order.id}"
                     )
                 )
-                await call.message.answer(str(order), reply_markup=delete_keyboard)
+                await call.message.answer(
+                    order.custom_str(self._yuan_rate),
+                    reply_markup=delete_keyboard,
+                )
         else:
             await call.message.answer("В вашей корзине нет ни одного товара")
 
@@ -132,19 +131,29 @@ class TG_Bot:
         )
 
     async def _send_order(self, call: aiogram.types.CallbackQuery):
-        user_orders = await self._order_storage.get_orders_by_user_id(
-            call.message.chat.id
-        )
-        if user_orders:
-            await call.message.answer(
-                "Ваш заказ:", reply_markup=self._order_sending_keyboard
+        user = await self._user_storage.get_by_id(call.message.chat.id)
+        if user and user.full_name:
+            user_orders = await self._order_storage.get_orders_by_user_id(
+                call.message.chat.id
             )
-            for order in user_orders:
-                await call.message.answer(str(order))
-            await GetOrderSendingConfirm.answer.set()
+            if user_orders:
+                await call.message.answer(
+                    "Убедитесь, что все данные верны 😊\n🛒 Ваш заказ::",
+                    reply_markup=self._order_sending_keyboard,
+                )
+                for order in user_orders:
+                    await call.message.answer(order.custom_str(self._yuan_rate))
+                await GetOrderSendingConfirm.answer.set()
+            else:
+                await call.message.answer(
+                    "Чтобы отправить заказ - нужно чтобы у вас было что-то в корзине. Сейчас там пусто."
+                )
         else:
             await call.message.answer(
-                "Чтобы отправить заказ - нужно чтобы у вас было что-то в корзине. Сейчас там пусто."
+                "Сейчас Вы не зарегестрированы, поэтому Оформление заказа Вам не доступно, пройдите регистрацию, нажав кнопку ниже:",
+                parse_mode="HTML",
+                reply_markup=self._inline_reg_keyboard,
+                # disable_web_page_preview=True,
             )
 
     async def _process_order_sending_answer(
@@ -161,28 +170,42 @@ class TG_Bot:
             user_orders = await self._order_storage.get_orders_by_user_id(
                 message.from_user.id
             )
-            total_price = 0
-            for order in user_orders:
-                await self._bot.send_message(
-                    917865313,
-                    # 5546230210,
-                    str(order),
-                )
-                total_price += order.price
-                await self._order_storage.delete(order.id)
             await self._bot.send_chat_action(
                 chat_id=message.from_user.id, action=aiogram.types.ChatActions.TYPING
             )
-            total_price = round(
-                1.06 * total_price * (await self.get_last_rate()) + 1000
-            )
+            total_price_yuan = 0
+            total_price_rub = 0
+            for order in user_orders:
+                rub_price = round(1.066 * 1.18 * order.price * self._yuan_rate + 1000)
+                give_bonuses_keyboard = None
+                if user.inviter_id:
+                    bonus_from_order = round(
+                        1.066 * 0.18 * order.price * self._yuan_rate * 0.2
+                    )
+                    give_bonuses_keyboard = InlineKeyboardMarkup().row(
+                        InlineKeyboardButton(
+                            "Выдать бонусы",
+                            callback_data=f"give_bonus {user.inviter_id} {bonus_from_order}",
+                        )
+                    )
+                await self._bot.send_message(
+                    917865313,
+                    # 5546230210,
+                    order.custom_str(self._yuan_rate),
+                    reply_markup=give_bonuses_keyboard,
+                )
+                total_price_yuan += order.price
+                total_price_rub += rub_price
+                await self._order_storage.delete(order.id)
+
+            total_profit = round(1.066 * 0.18 * total_price_yuan * self._yuan_rate)
             await self._bot.send_message(
                 917865313,
                 # 5546230210,
-                f"Приблизительная цена заказа в рублях: {total_price} ₽",
+                f"Приблизительная цена заказа в рублях: {total_price_rub} ₽\nПриблизительная прибыль заказа в рублях: {total_profit} ₽",
             )
             await message.answer(
-                f"С вами скоро свяжется наш оператор, ожидайте обратной связи.\n\nПриблизительная цена заказа в рублях: {total_price} ₽",
+                f"Оператор уже работает над заказом и скоро с Вами свяжется. Спасибо, что вы с нами ❤️\n\n💰Итоговая стоимость {total_price_rub} руб с доставкой до склада в Москве.\n\n🚚 Доставка СДЭКом от склада в Москве по России оплачивается отдельно",
                 reply_markup=self._menu_keyboard_user,
             )
             await state.finish()
@@ -194,16 +217,29 @@ class TG_Bot:
                 "Нет такого варианта ответа", reply_markup=self._order_sending_keyboard
             )
 
+    async def _give_bonus(self, call: aiogram.types.CallbackQuery):
+        user_id, bonus = list(map(int, call.data.split()[1:]))
+        await call.message.edit_reply_markup()
+        await self._user_storage.give_bonus(user_id, bonus)
+        await call.message.answer(
+            f"Успешно выдано <a href='tg://user?id={user_id}'>пользователю</a> {bonus} бонусов",
+            parse_mode="HTML",
+        )
+        await self._bot.send_message(
+            user_id,
+            f"Поздравляем 🎉 \nВы получили {bonus} бонусов за заказ друга 🤝\nСпасибо, что советуете наш сервис друзьям ❤️\n1 бонус = 1 рубль\nВы можете потратить бонусы у нас или вывести их на свою карту 🙂\n\n( для уточнения деталей реферальной программы обратитесь к менеджеру )",
+        )
+
     async def _ask_order_type(self, call: aiogram.types.CallbackQuery):
         await call.message.answer(
-            "Выберите тип нужного товара(желательно максимально полное):",
+            "👀 Выберите тип интересующего товара:",
             reply_markup=self._order_type_keyboard,
         )
 
     async def _start_user_registration(self, call: aiogram.types.CallbackQuery):
         await call.message.answer(
-            "Давайте сначала заполним немного информации о себе(исключительно данные для доставки)\n\n1/7 Введите Ваше полное имя и фамилию:",
-            reply_markup=self._cancel_keyboard,
+            "Давайте сначала заполним немного информации о себе(исключительно данные для доставки)\n\n1/3 Введите Ваше полное имя и фамилию:\n\nЕсли вы не хотите указывать данные сразу, то напишите «-»",
+            # reply_markup=self._cancel_keyboard,
         )
         await GetUserInfo.client_name.set()
 
@@ -219,8 +255,9 @@ class TG_Bot:
         async with aiofiles.open("link.jpg", "rb") as link_pic:
             await call.message.answer_photo(
                 link_pic,
-                f"1/{levels} Пришлите ссылку на товар:",
-                reply_markup=self._cancel_keyboard,
+                f"<a href='https://telegra.ph/Kak-skachat-Poison-i-najti-tam-tovar-10-27'>Как заказать товар?</a>\n1/{levels} Пришлите ссылку на товар по инструкции на картинке:",
+                # reply_markup=self._cancel_keyboard,
+                parse_mode="HTML",
             )
 
     async def _process_product_name(
@@ -232,14 +269,14 @@ class TG_Bot:
             async with aiofiles.open("pic.jpg", "rb") as picture:
                 await message.answer_photo(
                     picture,
-                    f"2/{state_data['levels']}  Введите стоимость товара в юанях (зачеркнутая цена):",
-                    reply_markup=self._cancel_keyboard,
+                    f"2/{state_data['levels']} Введите стоимость товара в юанях (зачеркнутая цена):",
+                    # reply_markup=self._cancel_keyboard,
                 )
             await GetProductInfo.price.set()
         else:
             await message.answer(
                 f"2/{state_data['levels']} Введите нужный размер:",
-                reply_markup=self._cancel_keyboard,
+                # reply_markup=self._cancel_keyboard,
             )
             await GetProductInfo.size.set()
 
@@ -252,7 +289,7 @@ class TG_Bot:
             await message.answer_photo(
                 picture,
                 f"3/{state_data['levels']} Введите стоимость товара в юанях (зачеркнутая цена):",
-                reply_markup=self._cancel_keyboard,
+                # reply_markup=self._cancel_keyboard,
             )
         await GetProductInfo.price.set()
 
@@ -271,10 +308,10 @@ class TG_Bot:
             )
             await self._order_storage.create(order)
             await message.answer(
-                "✅ Вы успешно добавили новый товар в свою корзину:",
+                "✅ Вы успешно добавили новый товар в корзину:",
                 reply_markup=self._inline_menu_keyboard,
             )
-            await message.answer(str(order))
+            await message.answer(order.custom_str(self._yuan_rate))
             await state.finish()
         else:
             await message.answer("Введите только число юаней(цифрами):")
@@ -282,75 +319,38 @@ class TG_Bot:
     async def _process_client_name(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
-        await state.update_data(client_name=message.text.strip())
-        await message.answer(
-            "2/7 Введите Ваш номер телефона:",
-            reply_markup=self._cancel_keyboard,
-        )
-        await GetUserInfo.phone.set()
+        if message.text.strip() == "-":
+            await message.answer(
+                "Вы пропустили регистрацию, но перед оформлением заказа зарегестрироваться будет необходимо."
+            )
+            await state.finish()
+            await self._show_menu(message)
+        else:
+            await state.update_data(client_name=message.text.strip())
+            await message.answer(
+                "2/3 Введите Ваш номер телефона:",
+                # reply_markup=self._cancel_keyboard,
+            )
+            await GetUserInfo.phone.set()
 
     async def _process_client_phone(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
         await state.update_data(client_phone=message.text.strip())
         await message.answer(
-            "3/7 Введите город доставки:",
-            reply_markup=self._cancel_keyboard,
+            "3/3 Введите адрес доставки:",
+            # reply_markup=self._cancel_keyboard,
         )
-        await GetUserInfo.city.set()
+        await GetUserInfo.address.set()
 
-    async def _process_client_city(
-        self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
-    ):
-        await state.update_data(client_city=message.text.strip())
-        await message.answer(
-            "4/7 Введите название улицы для доставки:",
-            reply_markup=self._cancel_keyboard,
-        )
-        await GetUserInfo.street.set()
-
-    async def _process_client_street(
-        self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
-    ):
-        await state.update_data(client_street=message.text.strip())
-        await message.answer(
-            "5/7 Введите номер дома для доставки:",
-            reply_markup=self._cancel_keyboard,
-        )
-        await GetUserInfo.house.set()
-
-    async def _process_client_house(
-        self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
-    ):
-        await state.update_data(client_house=message.text.strip())
-        await message.answer(
-            "6/7 Введите номер подъезда для доставки, если нет - смело пишите нет:",
-            reply_markup=self._cancel_keyboard,
-        )
-        await GetUserInfo.building.set()
-
-    async def _process_client_building(
-        self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
-    ):
-        await state.update_data(client_building=message.text.strip())
-        await message.answer(
-            "7/7 Введите номер квартиры/офиса для доставки:",
-            reply_markup=self._cancel_keyboard,
-        )
-        await GetUserInfo.apartament.set()
-
-    async def _process_client_apartament(
+    async def _process_client_address(
         self, message: aiogram.types.Message, state: aiogram.dispatcher.FSMContext
     ):
         state_data = await state.get_data()
         db_user = await self._user_storage.get_by_id(message.from_user.id)
         db_user.full_name = state_data["client_name"]
         db_user.phone = state_data["client_phone"]
-        db_user.city = state_data["client_city"]
-        db_user.street = state_data["client_street"]
-        db_user.house = state_data["client_house"]
-        db_user.building = state_data["client_building"]
-        db_user.apartament = message.text.strip()
+        db_user.address = message.text.strip()
         await state.finish()
         await self._user_storage.update(db_user)
         await message.answer(
@@ -373,11 +373,6 @@ class TG_Bot:
         self._dispatcher.register_message_handler(
             self._user_middleware(self._show_menu),
             text="Меню",
-        )
-
-        self._dispatcher.register_message_handler(
-            self._user_middleware(self._referal_system),
-            text="💸 Реферальная система",
         )
         self._dispatcher.register_message_handler(
             self._user_middleware(self._show_menu),
@@ -426,6 +421,17 @@ class TG_Bot:
             aiogram.dispatcher.filters.Text(startswith="withdraw"),
             state="*",
         )
+        self._dispatcher.register_callback_query_handler(
+            self._give_bonus,
+            aiogram.dispatcher.filters.Text(startswith="give_bonus"),
+            state="*",
+        )
+        self._dispatcher.register_callback_query_handler(
+            self._referal_system,
+            aiogram.dispatcher.filters.Text(startswith="referal_system"),
+            state="*",
+        )
+
         self._dispatcher.register_message_handler(
             self._process_product_name, state=GetProductInfo.link
         )
@@ -442,19 +448,7 @@ class TG_Bot:
             self._process_client_phone, state=GetUserInfo.phone
         )
         self._dispatcher.register_message_handler(
-            self._process_client_city, state=GetUserInfo.city
-        )
-        self._dispatcher.register_message_handler(
-            self._process_client_street, state=GetUserInfo.street
-        )
-        self._dispatcher.register_message_handler(
-            self._process_client_house, state=GetUserInfo.house
-        )
-        self._dispatcher.register_message_handler(
-            self._process_client_building, state=GetUserInfo.building
-        )
-        self._dispatcher.register_message_handler(
-            self._process_client_apartament, state=GetUserInfo.apartament
+            self._process_client_address, state=GetUserInfo.address
         )
 
     def _user_middleware(self, func: typing.Callable) -> typing.Callable:
@@ -477,6 +471,12 @@ class TG_Bot:
                     await message.answer("✅ Вы успешно установили своего пригласителя")
                 else:
                     user = User(id=message.chat.id, role=User.USER)
+                await message.answer(
+                    "Сейчас Вы не зарегестрированы, поэтому Оформление заказа Вам не доступно, пройдите регистрацию, нажав кнопку ниже:",
+                    parse_mode="HTML",
+                    reply_markup=self._inline_reg_keyboard,
+                    # disable_web_page_preview=True,
+                )
                 await self._user_storage.create(user)
             if user.role != User.BLOCKED:
                 await func(message)
@@ -492,21 +492,39 @@ class TG_Bot:
 
     def _create_keyboards(self):
         self._menu_keyboard_user = ReplyKeyboardMarkup(resize_keyboard=True).row(
-            KeyboardButton("Меню"), KeyboardButton("💸 Реферальная система")
+            KeyboardButton("Меню")
         )
 
         self._order_sending_keyboard = ReplyKeyboardMarkup(resize_keyboard=True).row(
             KeyboardButton("✅ Подтверждаю"), KeyboardButton("Назад")
         )
 
-        self._inline_menu_keyboard = (
+        self._inline_cart_keyboard = (
             InlineKeyboardMarkup()
-            .row(InlineKeyboardButton("Добавить товар", callback_data="add_product"))
-            .row(InlineKeyboardButton("🛒 Корзина", callback_data="cart"))
-            .row(InlineKeyboardButton("Оформить заказ", callback_data="send_order"))
+            .row(InlineKeyboardButton("😎 Добавить товар", callback_data="add_product"))
+            .row(InlineKeyboardButton("✅ Оформить заказ", callback_data="send_order"))
             .row(
                 InlineKeyboardButton(
-                    "Связаться с менеджером", url="https://t.me/clover4th"
+                    "📞 Связаться с менеджером", url="https://t.me/clover4th"
+                )
+            )
+        )
+
+        self._inline_menu_keyboard = (
+            InlineKeyboardMarkup()
+            .row(InlineKeyboardButton("😎 Добавить товар", callback_data="add_product"))
+            .row(InlineKeyboardButton("🛒 Корзина", callback_data="cart"))
+            .row(
+                InlineKeyboardButton("✅ Подтвердить заказ", callback_data="send_order")
+            )
+            .row(
+                InlineKeyboardButton(
+                    "📞 Связаться с менеджером", url="https://t.me/clover4th"
+                )
+            )
+            .row(
+                InlineKeyboardButton(
+                    "💸 Реферальная система", callback_data="referal_system"
                 )
             )
         )
@@ -518,7 +536,7 @@ class TG_Bot:
             )
             .row(
                 InlineKeyboardButton(
-                    "Связаться с менеджером", url="https://t.me/clover4th"
+                    "📞 Связаться с менеджером", url="https://t.me/clover4th"
                 )
             )
         )
@@ -544,8 +562,12 @@ class TG_Bot:
                 )
             )
             .row(InlineKeyboardButton(text="💻 Техника", callback_data="type tech"))
-            .row(InlineKeyboardButton(text="👜 One size", callback_data="type onesize"))
+            .row(
+                InlineKeyboardButton(
+                    text="👜 Аксессуары / Сумки / Рюкзаки", callback_data="type onesize"
+                )
+            )
         )
-        self._cancel_keyboard = InlineKeyboardMarkup().row(
-            InlineKeyboardButton(text="Отмена", callback_data="cancel")
-        )
+        # self._cancel_keyboard = InlineKeyboardMarkup().row(
+        #     InlineKeyboardButton(text="Отмена", callback_data="cancel")
+        # )

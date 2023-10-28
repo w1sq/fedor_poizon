@@ -13,11 +13,7 @@ class User:
     role: str
     full_name: str = None
     phone: str = None
-    city: str = None
-    street: str = None
-    house: str = None
-    building: str = None
-    apartament: str = None
+    address: str = None
     balance: int = 0
     inviter_id: int = None
 
@@ -36,20 +32,16 @@ class UserStorage:
                 role TEXT,
                 full_name TEXT DEFAULT NULL,
                 phone TEXT DEFAULT NULL,
-                city TEXT DEFAULT NULL,
-                street TEXT DEFAULT NULL,
-                house TEXT DEFAULT NULL,
-                building TEXT DEFAULT NULL,
-                apartament TEXT DEFAULT NULL,
+                address TEXT DEFAULT NULL,
                 balance INT NOT NULL DEFAULT 0,
                 inviter_id BIGINT DEFAULT NULL
             )
         """
         )
 
-    async def get_by_id(self, id: int) -> User | None:
+    async def get_by_id(self, user_id: int) -> User | None:
         data = await self._db.fetchrow(
-            f"SELECT * FROM {self.__table} WHERE id = $1", id
+            f"SELECT * FROM {self.__table} WHERE id = $1", user_id
         )
         if data is None:
             return None
@@ -61,10 +53,6 @@ class UserStorage:
             data[4],
             data[5],
             data[6],
-            data[7],
-            data[8],
-            data[9],
-            data[10],
         )
 
     async def promote_to_admin(self, id: int):
@@ -88,17 +76,13 @@ class UserStorage:
     async def create(self, user: User):
         await self._db.execute(
             f"""
-            INSERT INTO {self.__table} (id, role, full_name, phone, city, street, house, building, apartament, balance, inviter_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            INSERT INTO {self.__table} (id, role, full_name, phone, address, balance, inviter_id) VALUES ($1, $2, $3, $4, $5, $6, $7)
         """,
             user.id,
             user.role,
             user.full_name,
             user.phone,
-            user.city,
-            user.street,
-            user.house,
-            user.building,
-            user.apartament,
+            user.address,
             user.balance,
             user.inviter_id,
         )
@@ -106,16 +90,12 @@ class UserStorage:
     async def update(self, user: User):
         await self._db.execute(
             f"""
-            UPDATE {self.__table} SET (role, full_name, phone, city, street, house, building, apartament, balance, inviter_id) = ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) WHERE id = $11
+            UPDATE {self.__table} SET (role, full_name, phone, address, balance, inviter_id) = ($1, $2, $3, $4, $5, $6) WHERE id = $7
         """,
             user.role,
             user.full_name,
             user.phone,
-            user.city,
-            user.street,
-            user.house,
-            user.building,
-            user.apartament,
+            user.address,
             user.balance,
             user.inviter_id,
             user.id,
@@ -138,23 +118,26 @@ class UserStorage:
                 user_data[4],
                 user_data[5],
                 user_data[6],
-                user_data[7],
-                user_data[8],
-                user_data[9],
-                user_data[10],
             )
             for user_data in data
         ]
 
+    async def give_bonus(self, user_id: int, bonus: int):
+        await self._db.execute(
+            f"UPDATE {self.__table} SET balance = balance + $1 WHERE id = $2",
+            bonus,
+            user_id,
+        )
+
     async def get_user_amount(self) -> int:
         return await self._db.fetchval(f"SELECT COUNT(*) FROM {self.__table}")
 
-    async def ban_user(self, user_id: User):
+    async def ban_user(self, user_id: int):
         await self._db.execute(
             f"UPDATE {self.__table} SET role = $1 WHERE id = $2", User.BLOCKED, user_id
         )
 
-    async def unban_user(self, user_id: User):
+    async def unban_user(self, user_id: int):
         await self._db.execute(
             f"UPDATE {self.__table} SET role = $1 WHERE id = $2", User.USER, user_id
         )
