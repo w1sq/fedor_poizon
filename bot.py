@@ -87,7 +87,7 @@ class TG_Bot:
             InlineKeyboardButton("Вывести", callback_data=f"withdraw {user.id}")
         )
         await call.message.answer(
-            f"Ваш баланс: <b>{user.balance} ₽</b>\n\nПригласите друга и заработайте 20% от прибыли!\nВаша реферальная ссылка:\n\nhttps://t.me/fedoreventqrbot?start={user.id}",
+            f"Ваш баланс: <b>{user.balance} ₽</b>\n\nПригласите друга и заработайте 20% от прибыли!\nВаша реферальная ссылка:\n\nhttps://t.me/marequbot?start={user.id}",
             parse_mode="HTML",
             reply_markup=withdraw_keyboard,
         )
@@ -138,7 +138,7 @@ class TG_Bot:
             )
             if user_orders:
                 await call.message.answer(
-                    "Убедитесь, что все данные верны 😊\n🛒 Ваш заказ::",
+                    "Убедитесь, что все данные верны 😊\n🛒 Ваш заказ:",
                     reply_markup=self._order_sending_keyboard,
                 )
                 for order in user_orders:
@@ -164,7 +164,7 @@ class TG_Bot:
             await self._bot.send_message(
                 917865313,
                 # 5546230210,
-                f"""❗️Новая заявка❗️\n\nПользователь <a href="tg://user?id={user.id}">{user.full_name}</a>\nC id: {user.id}\n\nНомер телефона: {user.phone}\n\nАдрес доставки:\n\tГород: {user.city}\n\tУлица: {user.street}\n\tДом: {user.house}\n\tКорпус: {user.building}\n\tКвартира: {user.apartament}""",
+                f"""❗️Новая заявка❗️\n\nПользователь <a href="tg://user?id={user.id}">{user.full_name}</a>\nC id: {user.id}\n\nНомер телефона: {user.phone}\n\nАдрес доставки: {user.address}""",
                 parse_mode="HTML",
             )
             user_orders = await self._order_storage.get_orders_by_user_id(
@@ -255,7 +255,7 @@ class TG_Bot:
         async with aiofiles.open("link.jpg", "rb") as link_pic:
             await call.message.answer_photo(
                 link_pic,
-                f"<a href='https://telegra.ph/Kak-skachat-Poison-i-najti-tam-tovar-10-27'>Как заказать товар?</a>\n1/{levels} Пришлите ссылку на товар по инструкции на картинке:",
+                f"<a href='https://telegra.ph/Kak-skachat-Poison-i-najti-tam-tovar-10-27'>Как заказать товар?</a> - ссылка\n1/{levels} Пришлите ссылку на товар по инструкции на картинке:",
                 # reply_markup=self._cancel_keyboard,
                 parse_mode="HTML",
             )
