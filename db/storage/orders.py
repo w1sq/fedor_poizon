@@ -12,7 +12,7 @@ class Order:
     id: int = None
 
     def custom_str(self, yuan_rate: float) -> str:
-        rub_price = round(1.066 * 1.18 * self.price * yuan_rate + 1000)
+        rub_price = round(1.05 * 1.05 * self.price * yuan_rate + 1000)
         return f"{self.link}\nРазмер: {self.size}\nЦена в юанях: {self.price}\nЦена в рублях: {rub_price}"
 
 

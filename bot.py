@@ -45,6 +45,7 @@ class TG_Bot:
             self._bot, storage=self._storage
         )
         self._yuan_rate = None
+        self._photo = None
         self._create_keyboards()
 
     async def init(self):
@@ -74,12 +75,18 @@ class TG_Bot:
         self._yuan_rate = rate
 
     async def _show_menu(self, message: aiogram.types.Message):
-        await message.answer(
-            "Меню <a href='https://t.me/freshshshsh'>MAREQU Store</a>",
+        if not self._photo:
+            photo = aiogram.types.InputFile("logo.jpg")
+        else:
+            photo = self._photo
+        sent_message = await message.answer_photo(
+            photo,
+            caption="Меню <a href='https://t.me/marequstore'>MAREQU Store</a>",
             parse_mode="HTML",
             reply_markup=self._inline_menu_keyboard,
             # disable_web_page_preview=True,
         )
+        self._photo = sent_message.photo[0].file_id
 
     async def _referal_system(self, call: aiogram.types.CallbackQuery):
         user = await self._user_storage.get_by_id(call.message.chat.id)
@@ -176,11 +183,11 @@ class TG_Bot:
             total_price_yuan = 0
             total_price_rub = 0
             for order in user_orders:
-                rub_price = round(1.066 * 1.18 * order.price * self._yuan_rate + 1000)
+                rub_price = round(1.05 * 1.05 * order.price * self._yuan_rate + 1000)
                 give_bonuses_keyboard = None
                 if user.inviter_id:
                     bonus_from_order = round(
-                        1.066 * 0.18 * order.price * self._yuan_rate * 0.2
+                        1.05 * 0.05 * order.price * self._yuan_rate * 0.2
                     )
                     give_bonuses_keyboard = InlineKeyboardMarkup().row(
                         InlineKeyboardButton(
@@ -198,7 +205,7 @@ class TG_Bot:
                 total_price_rub += rub_price
                 await self._order_storage.delete(order.id)
 
-            total_profit = round(1.066 * 0.18 * total_price_yuan * self._yuan_rate)
+            total_profit = round(1.05 * 0.05 * total_price_yuan * self._yuan_rate)
             await self._bot.send_message(
                 917865313,
                 # 5546230210,
@@ -559,6 +566,11 @@ class TG_Bot:
             .row(
                 InlineKeyboardButton(
                     text="👖 Штаны / Джинсы / Брюки", callback_data="type bottom"
+                )
+            )
+            .row(
+                InlineKeyboardButton(
+                    text="«🧥 Куртки / Верхняя одежда»", callback_data="type jacket"
                 )
             )
             .row(InlineKeyboardButton(text="💻 Техника", callback_data="type tech"))
