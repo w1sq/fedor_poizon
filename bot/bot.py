@@ -3,11 +3,10 @@ import typing
 import aiogram
 import aiohttp
 import asyncio
+import aiofiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from db.storage import UserStorage, User, OrderStorage, Order
-import aiofiles
 from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
@@ -15,8 +14,8 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
-
 from config import Config
+from db.storage import UserStorage, User, OrderStorage, Order
 
 
 class GetUserInfo(StatesGroup):
@@ -169,7 +168,7 @@ class TG_Bot:
         user = await self._user_storage.get_by_id(message.from_user.id)
         if message.text.strip() == "✅ Подтверждаю":
             await self._bot.send_message(
-                917865313,
+                6632311175,
                 # 5546230210,
                 f"""❗️Новая заявка❗️\n\nПользователь <a href="tg://user?id={user.id}">{user.full_name}</a>\nC id: {user.id}\n\nНомер телефона: {user.phone}\n\nАдрес доставки: {user.address}""",
                 parse_mode="HTML",
@@ -196,7 +195,7 @@ class TG_Bot:
                         )
                     )
                 await self._bot.send_message(
-                    917865313,
+                    6632311175,
                     # 5546230210,
                     order.custom_str(self._yuan_rate),
                     reply_markup=give_bonuses_keyboard,
@@ -207,7 +206,7 @@ class TG_Bot:
 
             total_profit = round(1.05 * 0.05 * total_price_yuan * self._yuan_rate)
             await self._bot.send_message(
-                917865313,
+                6632311175,
                 # 5546230210,
                 f"Приблизительная цена заказа в рублях: {total_price_rub} ₽\nПриблизительная прибыль заказа в рублях: {total_profit} ₽",
             )
@@ -512,7 +511,7 @@ class TG_Bot:
             .row(InlineKeyboardButton("✅ Оформить заказ", callback_data="send_order"))
             .row(
                 InlineKeyboardButton(
-                    "📞 Связаться с менеджером", url="https://t.me/clover4th"
+                    "📞 Связаться с менеджером", url="https://t.me/marequadm"
                 )
             )
         )
@@ -526,7 +525,7 @@ class TG_Bot:
             )
             .row(
                 InlineKeyboardButton(
-                    "📞 Связаться с менеджером", url="https://t.me/clover4th"
+                    "📞 Связаться с менеджером", url="https://t.me/marequadm"
                 )
             )
             .row(
@@ -543,7 +542,7 @@ class TG_Bot:
             )
             .row(
                 InlineKeyboardButton(
-                    "📞 Связаться с менеджером", url="https://t.me/clover4th"
+                    "📞 Связаться с менеджером", url="https://t.me/marequadm"
                 )
             )
         )
@@ -570,7 +569,7 @@ class TG_Bot:
             )
             .row(
                 InlineKeyboardButton(
-                    text="«🧥 Куртки / Верхняя одежда»", callback_data="type jacket"
+                    text="🧥 Куртки / Верхняя одежда", callback_data="type jacket"
                 )
             )
             .row(InlineKeyboardButton(text="💻 Техника", callback_data="type tech"))

@@ -1,6 +1,7 @@
 import asyncio
+
 from db.db import DB
-from bot import TG_Bot
+from bot.bot import TG_Bot
 from db.storage import UserStorage, OrderStorage
 from config import Config
 
